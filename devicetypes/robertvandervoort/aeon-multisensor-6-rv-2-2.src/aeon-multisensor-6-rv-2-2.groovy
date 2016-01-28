@@ -106,9 +106,10 @@ It may help to select just the newly added sensor from the available items to se
 		status "wake up": "command: 8407, payload:"
 	}
 	tiles (scale: 2) {
-		multiAttributeTile(name:"main", type:"generic", width:6, height:4, canChangeIcon: true, canChangeBackground: true) {
+		multiAttributeTile(name:"main", type:"generic", width:6, height:4, /*canChangeIcon: true, canChangeBackground: true*/) {
 			tileAttribute("device.temperature", key: "PRIMARY_CONTROL") {
-            	attributeState "temperature",label:'${currentValue}Â°',backgroundColors:[
+            	attributeState "temperature",label:'${currentValue}°F',backgroundColors:[
+/*
                 	[value: 32, color: "#153591"],
                     [value: 44, color: "#1e9cbb"],
                     [value: 59, color: "#90d2a7"],
@@ -116,6 +117,23 @@ It may help to select just the newly added sensor from the available items to se
 					[value: 84, color: "#f1d801"],
 					[value: 92, color: "#d04e00"],
 					[value: 98, color: "#bc2323"]
+*/
+/* http://www.colorhexa.com/153591-to-bc2323
+#153591 #165e95 #178998 #189c82 #199f5c #1aa333 #2da71c #5baa1d #8aae1e #b1a81f #b57d20 #b85122 #bc2323
+*/
+                	[value: 60, color: "#153591"],
+                    [value: 62, color: "#165e95"],
+                    [value: 64, color: "#178998"],
+					[value: 66, color: "#189c82"],
+					[value: 68, color: "#199f5c"],
+					[value: 70, color: "#1aa333"],
+					[value: 72, color: "#2da71c"],
+                    [value: 74, color: "#5baa1d"],
+					[value: 76, color: "#8aae1e"],
+					[value: 78, color: "#b1a81f"],
+					[value: 80, color: "#b57d20"],
+					[value: 82, color: "#b85122"],
+					[value: 84, color: "#bc2323"]
 				]
             }
             tileAttribute("device.humidity", key: "SECONDARY_CONTROL") {
@@ -159,9 +177,15 @@ It may help to select just the newly added sensor from the available items to se
 	}
 	
     preferences {
+    	input description: "Version RV2.2 jlv0.7",
+			title: "Version",
+            displayDuringSetup: true,
+            type: "paragraph",
+            element: "paragraph"  
 		input "debugOutput", "boolean", 
 			title: "Enable debug logging?",
 			defaultValue: false,
+            required: false,
 			displayDuringSetup: true
 		input "tempoffset",
 			"number",
@@ -261,7 +285,8 @@ def zwaveEvent(physicalgraph.zwave.commands.wakeupv1.WakeUpNotification cmd)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
-	def encapsulatedCommand = cmd.encapsulatedCommand([0x31: 5, 0x30: 2, 0x7A: 2, 0x84: 1, 0x86: 1])
+	//def encapsulatedCommand = cmd.encapsulatedCommand([0x31: 5, 0x30: 2, 0x7A: 2, 0x84: 1, 0x86: 1])
+    def encapsulatedCommand = cmd.encapsulatedCommand([0x31: 5, 0x30: 2, 0x84: 1])
 	state.sec = 1
 	//if (state.debug) log.debug "encapsulated: ${encapsulatedCommand}"
 	if (encapsulatedCommand) {
