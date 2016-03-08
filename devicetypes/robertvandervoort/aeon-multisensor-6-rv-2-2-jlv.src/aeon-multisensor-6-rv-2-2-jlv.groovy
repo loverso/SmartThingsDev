@@ -177,7 +177,7 @@ It may help to select just the newly added sensor from the available items to se
 	}
 	
     preferences {
-    	input description: "Version RV2.2 jlv0.7",
+    	input description: "Version RV2.2 jlv0.8",
 			title: "Version",
             displayDuringSetup: true,
             type: "paragraph",
@@ -285,8 +285,7 @@ def zwaveEvent(physicalgraph.zwave.commands.wakeupv1.WakeUpNotification cmd)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.securityv1.SecurityMessageEncapsulation cmd) {
-	//def encapsulatedCommand = cmd.encapsulatedCommand([0x31: 5, 0x30: 2, 0x7A: 2, 0x84: 1, 0x86: 1])
-    def encapsulatedCommand = cmd.encapsulatedCommand([0x31: 5, 0x30: 2, 0x84: 1])
+	def encapsulatedCommand = cmd.encapsulatedCommand([0x31: 5, 0x30: 2, 0x7A: 2, 0x84: 1, 0x86: 1])
 	state.sec = 1
 	//if (state.debug) log.debug "encapsulated: ${encapsulatedCommand}"
 	if (encapsulatedCommand) {
