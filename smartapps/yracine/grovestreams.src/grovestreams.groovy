@@ -394,7 +394,8 @@ def processQueue() {
 			httpPutJson([uri: url, body: state.queue]) {
 				response ->
 					if (response.status != 200) {
-						log.debug "GroveStreams logging failed, status = ${response.status}"
+						log.error "GroveStreams logging failed, status = ${response.status}"
+						state.queue = []
 					} else {
 						log.debug "GroveStreams accepted event(s)"
 						state.queue = []
