@@ -406,13 +406,15 @@ def processQueue() {
 			if (e.statusCode != 200) {
 				log.error "Grovestreams: ${e}"
 			} else {
-				log.debug "GroveStreams accepted event(s)"
+				log.debug "GroveStreams accepted event(s) with error 200"
 				state.queue = []
 			}
             
 		} catch (e) {
 			def errorInfo = "Error sending value: ${e}"
 			log.error errorInfo
+            // "400 Bad Request" comes here when API limit is exceeded, so still need to discard queue
+            state.queue = []
 		}
 	}
 
