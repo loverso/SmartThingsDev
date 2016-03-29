@@ -30,7 +30,7 @@ definition(
 preferences {
 	section("About") {
 		paragraph "groveStreams, the smartapp that sends your device states to groveStreams for data correlation"
-		paragraph "Version 2.1.4 + jlv" 
+		paragraph "Version 2.1.5 + jlv" 
 		paragraph "If you like this smartapp, please support the developer via PayPal and click on the Paypal link below " 
 			href url: "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=yracine%40yahoo%2ecom&lc=US&item_name=Maisons%20ecomatiq&no_note=0&currency_code=USD&bn=PP%2dDonationsBF%3abtn_donateCC_LG%2egif%3aNonHostedGuest",
 				title:"Paypal donation..."
@@ -135,9 +135,10 @@ def initialize() {
 	subscribe(automatic, "yesterdayTotalHardBrake",handleDailyStats)
 	subscribe(automatic, "yesterdayAvgScoreSpeeding",handleDailyStats)
 	subscribe(automatic, "yesterdayAvgScoreEvents",handleDailyStats)
-	state.queue = []
-
-	state?.poll = [ last: 0, rescheduled: now() ]
+	def queue = []
+	atomicState.queue=queue
+    
+	atomicState?.poll = [ last: 0, rescheduled: now() ]
 
 	Integer delay  = givenInterval ?: 5 // By default, schedule processQueue every 5 min.
 	log.debug "initialize>scheduling processQueue every ${delay} minutes"
@@ -156,7 +157,8 @@ def initialize() {
 def appTouch(evt) {
 	rescheduleIfNeeded()
 	processQueue()
-	state.queue = [] // empty the queue in case of an ST issue    
+	def queue = []
+	atomicState.queue=queue
 }
 
 
@@ -164,15 +166,19 @@ def rescheduleIfNeeded(evt) {
 	if (evt) log.debug("rescheduleIfNeeded>$evt.name=$evt.value")
 	Integer delay  = givenInterval ?: 5 // By default, schedule processQueue every 5 min.
 	BigDecimal currentTime = now()    
-	BigDecimal lastPollTime = (currentTime - (state?.poll["last"]?:0))  
+	BigDecimal lastPollTime = (currentTime - (atomicState?.poll["last"]?:0))  
 	if (lastPollTime != currentTime) {    
 		Double lastPollTimeInMinutes = (lastPollTime/60000).toDouble().round(1)      
 		log.info "rescheduleIfNeeded>last poll was  ${lastPollTimeInMinutes.toString()} minutes ago"
 	}
-	if (((state?.poll["last"]?:0) + (delay * 60000) < currentTime) && canSchedule()) {
+	if (((atomicState?.poll["last"]?:0) + (delay * 60000) < currentTime) && canSchedule()) {
 		log.info "rescheduleIfNeeded>scheduling processQueue in ${delay} minutes.."
+		unschedule        
 		schedule("0 0/${delay} * * * ?", processQueue)
 	}
+	// Update rescheduled state
+    
+	if (!evt) atomicState.poll["rescheduled"] = now()    
 }    
 
 def handleTemperatureEvent(evt) {
@@ -182,7 +188,6 @@ def handleTemperatureEvent(evt) {
 }
 
 def handleHumidityEvent(evt) {
-	log.debug "${evt.name}=${evt.value}"
 	queueValue(evt) {
 		it.toString()
 	}
@@ -365,40 +370,45 @@ def handleCostEvent(evt) {
 private queueValue(evt, Closure convert) {
 	def MAX_QUEUE_SIZE=900
 	def jsonPayload = [compId: evt.displayName, streamId: evt.name, data: convert(evt.value), time: now()]
-	    
-	log.debug "queueValue>queue size = ${state.queue.size()}, appending to queue ${jsonPayload}"
-	if (state.queue.size() >  MAX_QUEUE_SIZE) {
+	atomicState?.poll["last"] = now()
+
+	def queue = atomicState.queue
+	queue << jsonPayload
+	def queue_size = queue.toString().length()
+	def last_item_in_queue = queue[queue.size() -1]    
+	log.debug "queueValue>queue size in chars=${queue_size}, appending ${jsonPayload} to queue, last item in queue= $last_item_in_queue"
+	atomicState.queue = queue    
+	if (queue_size >  MAX_QUEUE_SIZE) {
 		processQueue()
 	}
-	state.queue << jsonPayload
 }
 
 def processQueue() {
 	Integer delay  = givenInterval ?: 5 // By default, schedule processQueue every 5 min.
-	state?.poll["last"] = now()
-		
-	//schedule the rescheduleIfNeeded() function
+	atomicState?.poll["last"] = now()
+	def queue = atomicState.queue
     
-	if (((state?.poll["rescheduled"]?:0) + (delay * 60000)) < now()) {
+/*    
+	//schedule the rescheduleIfNeeded() function
+	if (((atomicState?.poll["rescheduled"]?:0) + (delay * 60000)) < now()) {
 		log.info "takeAction>scheduling rescheduleIfNeeded() in ${delay} minutes.."
 		schedule("0 0/${delay} * * * ?", rescheduleIfNeeded)
 		// Update rescheduled state
-		state?.poll["rescheduled"] = now()
+		atomicState?.poll["rescheduled"] = now()
 	}
+*/    
 	def url = "https://grovestreams.com/api/feed?api_key=${channelKey}"
 	log.debug "processQueue"
-	if (state.queue != []) {
-		log.debug "Events: ${state.queue}"
+	if (queue != []) {
+		log.debug "Events to be sent to groveStreams: ${queue}"
 
 		try {
-			httpPutJson([uri: url, body: state.queue]) {
+			httpPutJson([uri: url, body: queue]) {
 				response ->
 					if (response.status != 200) {
 						log.error "GroveStreams logging failed, status = ${response.status}"
-						state.queue = []
 					} else {
 						log.debug "GroveStreams accepted event(s)"
-						state.queue = []
 					}
 			}
 		} catch (groovyx.net.http.ResponseParseException e) {
@@ -406,16 +416,17 @@ def processQueue() {
 			if (e.statusCode != 200) {
 				log.error "Grovestreams: ${e}"
 			} else {
-				log.debug "GroveStreams accepted event(s) with error 200"
-				state.queue = []
+				log.error "GroveStreams accepted event(s)"
 			}
             
 		} catch (e) {
+            // "400 Bad Request" comes here when API limit is exceeded
 			def errorInfo = "Error sending value: ${e}"
 			log.error errorInfo
-            // "400 Bad Request" comes here when API limit is exceeded, so still need to discard queue
-            state.queue = []
 		}
+		// no matter what, reset the queue 
+		queue =[]                         
+		atomicState.queue = queue                        
 	}
 
 }
