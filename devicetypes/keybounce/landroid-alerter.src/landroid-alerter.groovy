@@ -4,10 +4,13 @@
  *  Requires the LANnouncer android app; https://play.google.com/store/apps/details?id=com.keybounce.lannouncer
  *  See http://www.keybounce.com/LANdroidHowTo/LANdroid.html for full downloads and instructions.
  *  SmartThings thread: https://community.smartthings.com/t/android-as-a-speech-alarm-device-released/30282/12
+ *  
+ * Note: Only Siren and Strobe from the U.I. or Alarm capabilities default to continuous.
  *
- *  Version 1.14, 30 Dec 2015
+ *  Version 1.25 22 July 2016
+ * 
  *
- *  Copyright 2015 Tony McNamara
+ *  Copyright 2015-2016 Tony McNamara
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -18,10 +21,12 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
+ * To Do: Add string return to Image Capture attribute
+ *
  */
 
 metadata {
-    definition (name: "LANdroid Alerter", namespace: "KeyBounce", author: "Tony McNamara") {
+    definition (name: "LANnouncer Alerter", namespace: "KeyBounce", author: "Tony McNamara") {
         capability "Alarm"
         capability "Speech Synthesis"
         capability "Notification"
@@ -31,15 +36,29 @@ metadata {
         /* Per http://docs.smartthings.com/en/latest/device-type-developers-guide/overview.html#actuator-and-sensor */
         capability "Sensor"
         capability "Actuator"
+
+        // Custom Commands
+        /** Retrieve image, formatted for SmartThings, from camera by name. */
+        command "chime"
+        command "doorbell"
+        command "ipCamSequence", ["number"]
+        command "retrieveAndWait", ["string"]
+        command "retrieveFirstAndWait"
+        command "retrieveSecondAndWait"
     }
     preferences {
         input("DeviceLocalLan", "string", title:"Android IP Address", description:"Please enter your tablet's I.P. address", defaultValue:"" , required: false, displayDuringSetup: true)
         input("DevicePort", "string", title:"Android Port", description:"Port the Android device listens on", defaultValue:"1035", required: false, displayDuringSetup: true)
         input("ReplyOnEmpty", "bool", title:"Say Nothing", description:"When no speech is found, announce LANdroid?  (Needed for the speech and notify tiles to work)", defaultValue: true, displayDuringSetup: true)
+        input("AlarmContinuous", "bool", title:"Continuous Alarm (vs 10 sec.)", description: "When on, the alarm will sound until Stop is issued.", defaultValue: false, displayDuringSetup: true)
     }
 
     simulator {
-        
+        // reply messages
+        ["strobe","siren","both","off"].each 
+            {
+                reply "$it": "alarm:$it"
+            }
     }
 
     tiles {
@@ -55,6 +74,9 @@ metadata {
         
         standardTile("siren", "device.alarm", inactiveLabel: false, decoration: "flat") {
             state "default", label:'', action:"alarm.siren", icon:"st.secondary.siren"
+        }
+        standardTile("off", "device.alarm", inactiveLabel: false, decoration: "flat") {
+            state "default", label:'Off', action:"alarm.off", icon:"st.quirky.spotter.quirky-spotter-sound-off"
         }       
         
         /* Apparently can't show image attributes on tiles. */
@@ -79,48 +101,71 @@ metadata {
         carouselTile("cameraDetails", "device.image", width: 3, height: 2) { }
 
         main (["alarm", "take"]);
-        details(["alarm","strobe","siren","speak", "take","toast","beep", "cameraDetails"]);
+        details(["alarm","strobe","siren","off","speak", "take","toast","beep", "cameraDetails"]);
     }
 }
 
 /** Generally matches TTSServer/app/build.gradle */
-String getVersion() {return "11";}
+String getVersion() {return "24 built July 2016";}
 
-// handle commands
+
+/** Alarm Capability, Off.
+ *  Turns off both the strobe and the alarm.
+ *  Necessary when in continuous mode. 
+ */
 def off() {
     log.debug "Executing 'off'"
-    // TODO: handle 'off' command
+    sendEvent(name:"alarm", value:"off")
+    def command="&ALARM=STOP&FLASH=STOP&"+getDoneString();
+    return sendCommands(command)
 }
 
+/** Alarm Capability: Strobe
+ *  Flashes the camera light, if any.
+ */
 def strobe() {
     log.debug "Executing 'strobe'"
-    // TODO: handle 'strobe' command
-    def command="&FLASH=STROBE&"+getDoneString()
-    sendCommands(command)
+    // For illustration, switch to siren and sendEvent after.
+    def command= (AlarmContinuous?"&FLASH=CONTINUOUS&":"&FLASH=STROBE&")+getDoneString();
+    // def command=(AlarmContinuous?"&ALARM=SIREN:CONTINUOUS&":"&ALARM=SIREN&")+getDoneString();
+    def hubAction = sendCommands(command)
+    sendEvent(name:"alarm", value:"strobe")
+    return hubAction;
 }
 
+/** Alarm Capability: Siren 
+ *  Sounds the siren, either continuous or for a brief period, depending on setting.
+ *  If continuous, Stop should be called later.
+ */
 def siren() {
     log.debug "Executing 'siren'"
-    // TODO: handle 'siren' command
-    def command="&ALARM=SIREN&"+getDoneString()
-    sendCommands(command)
+    sendEvent(name:"alarm", value:"siren")
+    def command=(AlarmContinuous?"&ALARM=SIREN:CONTINUOUS&":"&ALARM=SIREN&")+getDoneString();
+    return sendCommands(command);
 }
 
+/** Tone Capability: Beep
+ *  Sounds a short beep
+ */
 def beep() {
     log.debug "Executing 'beep'"
-    // TODO: handle 'siren' command
     def command="&ALARM=CHIME&"+getDoneString()
-    sendCommands(command)
+    return sendCommands(command);
 }
 
 def both() {
     log.debug "Executing 'both'"
-    // TODO: handle 'both' command
+    sendEvent(name:"alarm", value:"both")
     def command="&ALARM=ON&FLASH=ON&"+getDoneString()
-    sendCommands(command)
+    if (AlarmContinuous)
+    {
+        command="&ALARM=SIREN:CONTINUOUS&FLASH=CONTINUOUS&"+getDoneString()
+    }
+    return sendCommands(command);
 }
 
-
+/** speechSynthesis Capability: Speak
+ */
 def speak(toSay) {
     log.debug "Executing 'speak'"
     if (!toSay?.trim()) {
@@ -131,10 +176,12 @@ def speak(toSay) {
 
     if (toSay?.trim()) {
         def command="&SPEAK="+toSay+"&"+getDoneString()
-        sendCommands(command)
+        return sendCommands(command)
     }
 }
 
+/** Notification capability: deviceNotification
+ */
 def deviceNotification(toToast) {
     log.debug "Executing notification with "+toToast
     if (!toToast?.trim()) {
@@ -144,24 +191,66 @@ def deviceNotification(toToast) {
     }
     if (toToast?.trim()) {
         def command="&TOAST="+toToast+"&"+getDoneString()
-        sendCommands(command)
+        return sendCommands(command)
     }
 }    
+
+def chime() {
+    log.debug "Executing 'chime'"
+    // TODO: handle 'siren' command
+    def command="&ALARM=CHIME&"+getDoneString()
+    return sendCommands(command)
+}
+
+def doorbell() {
+    log.debug "Executing 'doorbell'"
+    // TODO: handle 'siren' command
+    def command="&ALARM=DOORBELL&"+getDoneString()
+    return sendCommands(command)
+}
+
+def ipCamSequence(cameraNumber) {
+    def camera = (cameraNumber==1?"FIRST":"SECOND");
+    def command="&RETRIEVESEQ="+cameraNumber+"&"+getDoneString()
+    return sendIPCommand(command, true)
+}
+
+
+def retrieveFirstAndWait() {
+    retrieveAndWait("FIRST");
+}
+def retrieveSecondAndWait() {
+    retrieveAndWait("SECOND");
+}
+def retrieveAndWait(cameraName) {
+    log.info("Requesting image from camera ${cameraName}");
+    def command="&RETRIEVE="+cameraName+"&STSHRINK=TRUE&"+getDoneString()
+    return sendIPCommand(command, true)
+}
+
 
 def take() {
     // This won't result in received file. Can't handle large or binaries in hub.
     log.debug "Executing 'take'"
     def command="&PHOTO=BACK&STSHRINK=TRUE&"+getDoneString()
-    sendIPCommand(command, true)
+    return sendIPCommand(command, true)
 }
 
-/* Send to IP and to SMS as appropriate */
+/** Send to IP and to SMS as appropriate 
+ *  The caller MUST return the value, which is the hubAction.
+ *  As of version 1.25, does not "send" the command so much as 
+ *  request that the calling service send it.
+ */
 private sendCommands(command) {
     log.info "Command request: "+command
     sendSMSCommand(command)
-    sendIPCommand(command)
+    return sendIPCommand(command)
 }
 
+/** Prepares the hubAction to be executed.
+ *  Pre-V25, this was executed in-line.  
+ *  Now it is returned, not executed, and must be returned up the calling chain.
+ */
 private sendIPCommand(commandString, sendToS3 = false) {
     log.info "Sending command "+ commandString+" to "+DeviceLocalLan+":"+DevicePort
     if (DeviceLocalLan?.trim()) {
@@ -184,7 +273,7 @@ private sendIPCommand(commandString, sendToS3 = false) {
             hubAction.options = [outputMsgToS3:true];
         }
         log.debug hubAction
-        hubAction;
+        return hubAction;
     }
 }
 
@@ -269,3 +358,5 @@ private String convertPortToHex(port) {
     log.debug hexport
     return hexport
 }
+
+
