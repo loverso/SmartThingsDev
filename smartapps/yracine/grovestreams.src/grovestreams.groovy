@@ -13,7 +13,12 @@
  *
  *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. 
+ *  Software Distribution is restricted and shall be done only with Developer's written approval.
+ *
  *  Based on code from Jason Steele & Minollo
+ *  Adapted to be compatible with MyEcobee and My Automatic devices which are available at my store:
+ *          http://www.ecomatiqhomes.com/#!store/tc3yr 
+ * 
  */
 definition(
 	name: "groveStreams",
@@ -30,9 +35,9 @@ definition(
 preferences {
 	section("About") {
 		paragraph "groveStreams, the smartapp that sends your device states to groveStreams for data correlation"
-		paragraph "Version 2.1.5 + jlv" 
+		paragraph "Version 2.2.3" 
 		paragraph "If you like this smartapp, please support the developer via PayPal and click on the Paypal link below " 
-			href url: "https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=yracine%40yahoo%2ecom&lc=US&item_name=Maisons%20ecomatiq&no_note=0&currency_code=USD&bn=PP%2dDonationsBF%3abtn_donateCC_LG%2egif%3aNonHostedGuest",
+			href url: "https://www.paypal.me/ecomatiqhomes",
 				title:"Paypal donation..."
 		paragraph "Copyright©2014 Yves Racine"
 			href url:"http://github.com/yracine/device-type.myecobee", style:"embedded", required:false, title:"More information..."  
@@ -42,11 +47,11 @@ preferences {
 		input "temperatures", "capability.temperatureMeasurement", title: "Temperatures", required: false, multiple: true
 		input "thermostats", "capability.thermostat", title: "Thermostats", required: false, multiple: true
 		input "ecobees", "device.myEcobeeDevice", title: "Ecobees", required: false, multiple: true
-		input "automatic", "device.myAutomaticDevice", title: "Automatic Connected Device(s)", required: false, multiple: true
+		input "automatic", "capability.presenceSensor", title: "Automatic Connected Device(s)", required: false, multiple: true
 		input "detectors", "capability.smokeDetector", title: "Smoke/CarbonMonoxide Detectors", required: false, multiple: true
 		input "humidities", "capability.relativeHumidityMeasurement", title: "Humidity sensors", required: false, multiple: true
 		input "waters", "capability.waterSensor", title: "Water sensors", required: false, multiple: true
-		input "illuminances", "capability.illuminanceMeasurement", title: "Illuminance sensor", required: false, multiple: true
+		input "illuminances", "capability.IlluminanceMeasurement", title: "Illuminance sensor", required: false, multiple: true
 		input "locks", "capability.lock", title: "Locks", required: false, multiple: true
 		input "contacts", "capability.contactSensor", title: "Doors open/close", required: false, multiple: true
 		input "accelerations", "capability.accelerationSensor", title: "Accelerations", required: false, multiple: true
@@ -85,7 +90,7 @@ def initialize() {
 	subscribe(waters, "water", handleWaterEvent)
 	subscribe(detectors, "smoke", handleSmokeEvent)
 	subscribe(detectors, "carbonMonoxide", handleCarbonMonoxideEvent)
-	subscribe(illuminances, "illuminanceMeasurement", handleIlluminanceEvent)
+	subscribe(illuminances, "illuminance", handleIlluminanceEvent)
 	subscribe(contacts, "contact", handleContactEvent)
 	subscribe(locks, "lock", handleLockEvent)
 	subscribe(accelerations, "acceleration", handleAccelerationEvent)
@@ -115,6 +120,9 @@ def initialize() {
 	subscribe(ecobees, "auxHeat1RuntimeDaily", handleDailyStats)
 	subscribe(ecobees, "auxHeat2RuntimeDaily", handleDailyStats)
 	subscribe(ecobees, "auxHeat3RuntimeDaily", handleDailyStats)
+	subscribe(ecobees, "compHeat1RuntimeDaily", handleDailyStats)
+	subscribe(ecobees, "compHeat2RuntimeDaily", handleDailyStats)
+	subscribe(ecobees, "compHeat3RuntimeDaily", handleDailyStats)
 	subscribe(ecobees, "compCool1RuntimeDaily", handleDailyStats)
 	subscribe(ecobees, "compCool2RuntimeDaily", handleDailyStats)
 	subscribe(ecobees, "fanRuntimeDaily", handleDailyStats)
@@ -123,21 +131,24 @@ def initialize() {
 	subscribe(ecobees, "ventilatorRuntimeDaily", handleDailyStats)
 	subscribe(ecobees, "presence", handlePresenceEvent)
 	subscribe(ecobees, "compCool2RuntimeDaily", handleDailyStats)
-	subscribe(automatic, "yesterdayAvgTripConsumption",handleDailyStats)
-	subscribe(automatic, "yesterdayAvgTripDistance",handleDailyStats)
-	subscribe(automatic, "yesterdayAvgTripDuration",handleDailyStats)
-	subscribe(automatic, "yesterdayTotalDistance",handleDailyStats)
-	subscribe(automatic, "yesterdayAvgTripFuelVolume",handleDailyStats)
-	subscribe(automatic, "yesterdayTotalFuelVolume",handleDailyStats)
-	subscribe(automatic, "yesterdayTotalDuration",handleDailyStats)
-	subscribe(automatic, "yesterdayTotalNbTrip",handleDailyStats)
-	subscribe(automatic, "yesterdayTotalHardAcceleration",handleDailyStats)
-	subscribe(automatic, "yesterdayTotalHardBrake",handleDailyStats)
-	subscribe(automatic, "yesterdayAvgScoreSpeeding",handleDailyStats)
-	subscribe(automatic, "yesterdayAvgScoreEvents",handleDailyStats)
+	subscribe(automatic, "yesterdayTripsAvgAverageKmpl",handleDailyStats)
+	subscribe(automatic, "yesterdayTripsAvgDistanceM",handleDailyStats)
+	subscribe(automatic, "yesterdayTripsAvgDurationS",handleDailyStats)
+	subscribe(automatic, "yesterdayTotalDistanceM",handleDailyStats)
+	subscribe(automatic, "yesterdayTripsAvgFuelVolumeL",handleDailyStats)
+	subscribe(automatic, "yesterdayTotalFuelVolumeL",handleDailyStats)
+	subscribe(automatic, "yesterdayTotalDurationS:",handleDailyStats)
+	subscribe(automatic, "yesterdayTotalNbTrips",handleDailyStats)
+	subscribe(automatic, "yesterdayTotalHardAccels",handleDailyStats)
+	subscribe(automatic, "yesterdayTotalHardBrakes:",handleDailyStats)
+	subscribe(automatic, "yesterdayTripsAvgScoreSpeeding",handleDailyStats)
+	subscribe(automatic, "yesterdayTripsAvgScoreEvents",handleDailyStats)
 	def queue = []
 	atomicState.queue=queue
     
+	if (atomicState.queue==null) {
+		atomicState.queue = []
+	}    
 	atomicState?.poll = [ last: 0, rescheduled: now() ]
 
 	Integer delay  = givenInterval ?: 5 // By default, schedule processQueue every 5 min.
@@ -178,7 +189,9 @@ def rescheduleIfNeeded(evt) {
 	}
 	// Update rescheduled state
     
-	if (!evt) atomicState.poll["rescheduled"] = now()    
+	if (!evt) {
+		atomicState.poll["rescheduled"] = now()    
+	}        
 }    
 
 def handleTemperatureEvent(evt) {
@@ -291,6 +304,7 @@ def handleCarbonMonoxideEvent(evt) {
 }
 
 def handleIlluminanceEvent(evt) {
+	log.debug ("handleIlluminanceEvent> $evt.name= $evt.value")
 	queueValue(evt) {
 		it.toString()
 	}
@@ -368,16 +382,16 @@ def handleCostEvent(evt) {
 }
 
 private queueValue(evt, Closure convert) {
-	def MAX_QUEUE_SIZE=900
+	def MAX_QUEUE_SIZE=95000
 	def jsonPayload = [compId: evt.displayName, streamId: evt.name, data: convert(evt.value), time: now()]
-	atomicState?.poll["last"] = now()
+	def queue
 
-	def queue = atomicState.queue
+	queue = atomicState.queue
 	queue << jsonPayload
+	atomicState.queue = queue    
 	def queue_size = queue.toString().length()
 	def last_item_in_queue = queue[queue.size() -1]    
 	log.debug "queueValue>queue size in chars=${queue_size}, appending ${jsonPayload} to queue, last item in queue= $last_item_in_queue"
-	atomicState.queue = queue    
 	if (queue_size >  MAX_QUEUE_SIZE) {
 		processQueue()
 	}
@@ -386,47 +400,51 @@ private queueValue(evt, Closure convert) {
 def processQueue() {
 	Integer delay  = givenInterval ?: 5 // By default, schedule processQueue every 5 min.
 	atomicState?.poll["last"] = now()
-	def queue = atomicState.queue
-    
-/*    
-	//schedule the rescheduleIfNeeded() function
+
 	if (((atomicState?.poll["rescheduled"]?:0) + (delay * 60000)) < now()) {
-		log.info "takeAction>scheduling rescheduleIfNeeded() in ${delay} minutes.."
+		log.info "processQueue>scheduling rescheduleIfNeeded() in ${delay} minutes.."
 		schedule("0 0/${delay} * * * ?", rescheduleIfNeeded)
 		// Update rescheduled state
 		atomicState?.poll["rescheduled"] = now()
 	}
-*/    
+
+	def queue = atomicState.queue
+    
+   
 	def url = "https://grovestreams.com/api/feed?api_key=${channelKey}"
 	log.debug "processQueue"
 	if (queue != []) {
 		log.debug "Events to be sent to groveStreams: ${queue}"
 
 		try {
-			httpPutJson([uri: url, body: queue]) {
-				response ->
-					if (response.status != 200) {
-						log.error "GroveStreams logging failed, status = ${response.status}"
-					} else {
-						log.debug "GroveStreams accepted event(s)"
-					}
+			httpPutJson([uri: url, body: queue]) {response ->
+				if (response.status != 200) {
+					log.debug "GroveStreams logging failed, status = ${response.status}"
+				} else {
+					log.debug "GroveStreams accepted event(s)"
+					// reset the queue 
+					queue =[]                         
+					atomicState.queue = queue                     
+				}
 			}
 		} catch (groovyx.net.http.ResponseParseException e) {
 			// ignore error 200, bogus exception
 			if (e.statusCode != 200) {
 				log.error "Grovestreams: ${e}"
 			} else {
-				log.error "GroveStreams accepted event(s)"
+				log.debug "GroveStreams accepted event(s)"
 			}
+			// reset the queue 
+			queue =[]                         
+			atomicState.queue = queue                      
             
 		} catch (e) {
-            // "400 Bad Request" comes here when API limit is exceeded
 			def errorInfo = "Error sending value: ${e}"
 			log.error errorInfo
+			// reset the queue 
+			queue =[]                         
+			atomicState.queue = queue                        
 		}
-		// no matter what, reset the queue 
-		queue =[]                         
-		atomicState.queue = queue                        
 	}
 
 }
